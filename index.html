@@ -134,9 +134,11 @@ function render(data){
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0;font-size:1.15rem">${esc(p.title||'Episode')}</h2>${modeBadge}
       </div>${warn}
+      <div style="margin-top:10px"><button class="primary" style="width:100%" onclick="compileVideo(this)">🎬 Compile 1-minute video</button></div>
+      <div id="videoOut"></div>
       <h3>Narration (→ paste into your voice tool)</h3>
       <div class="block">${copyBtn(narration)}${esc(narration)}</div>
-      <h3>Scenes & image prompts (→ your image generator, or the buttons below)</h3>
+      <h3>Scenes & image prompts (→ your image generator)</h3>
       <div class="block" style="white-space:normal">${copyBtn(promptsPlain)}${scenes}</div>
       <h3>Captions</h3>
       <div class="block">${copyBtn(caps.youtube||'')}<b>YouTube:</b> ${esc(caps.youtube||'')}</div>
@@ -155,11 +157,58 @@ async function genImage(btn, i){
     const r = await fetch('/api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
     const d = await r.json();
     if(!d.ok) throw new Error(d.error||'image generation failed');
+    if(window.__pkg && window.__pkg.scenes[i]) window.__pkg.scenes[i].image_url = d.url;
     wrap.innerHTML = `<img src="${d.url}" alt="" style="width:100%;max-width:270px;border-radius:8px;margin-top:8px;display:block">
       <a href="${d.url}" download target="_blank" style="font-size:.8rem">download image</a>`;
     btn.textContent = '✓ image ready';
   }catch(e){
     wrap.innerHTML = `<div class="hint" style="color:#e08">${esc(e.message)}</div>`;
+    btn.textContent = orig; btn.disabled = false;
+  }
+}
+
+async function compileVideo(btn){
+  const p = window.__pkg;
+  if(!p || !p.scenes || !p.scenes.length) return;
+  const out = document.getElementById('videoOut');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  const narration = (p.hook?p.hook+' ':'') + (p.script||'');
+  try{
+    for(let i=0;i<p.scenes.length;i++){
+      if(!p.scenes[i].image_url){
+        btn.textContent = `generating image ${i+1}/${p.scenes.length}…`;
+        const r = await fetch('/api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p.scenes[i].image_prompt})});
+        const d = await r.json();
+        if(!d.ok) throw new Error('image '+(i+1)+': '+(d.error||'failed'));
+        p.scenes[i].image_url = d.url;
+      }
+    }
+    btn.textContent = 'submitting render…';
+    const scenes = p.scenes.map(s=>({image_url:s.image_url}));
+    const sr = await fetch('/api/compile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:p.title,narration,scenes})});
+    const sd = await sr.json();
+    if(!sd.ok) throw new Error(sd.error||'submit failed');
+    const id = sd.projectId;
+    btn.textContent = 'rendering video…';
+    out.innerHTML = `<div class="hint">Rendering… this can take a couple of minutes.</div>`;
+    let tries=0, url=null;
+    while(tries<80){
+      await new Promise(res=>setTimeout(res,5000));
+      const pr = await fetch('/api/compile?id='+encodeURIComponent(id));
+      const pd = await pr.json();
+      if(!pd.ok) throw new Error(pd.error||'status check failed');
+      if(pd.status==='done' && pd.url){ url=pd.url; break; }
+      if(pd.status==='error') throw new Error(pd.message||'render error');
+      out.innerHTML = `<div class="hint">Rendering… (${pd.status||'working'}) — ${(tries+1)*5}s elapsed</div>`;
+      tries++;
+    }
+    if(!url) throw new Error('render timed out');
+    out.innerHTML = `<video src="${url}" controls style="width:100%;max-width:300px;border-radius:10px;margin-top:10px;display:block"></video>
+      <a href="${url}" download target="_blank">download MP4</a>`;
+    btn.textContent = '✓ video ready';
+  }catch(e){
+    out.innerHTML = `<div class="warn">${esc(e.message)}</div>`;
     btn.textContent = orig; btn.disabled = false;
   }
 }
