@@ -120,7 +120,10 @@ async function generate(demo){
 
 function render(data){
   const p = data.package;
-  const scenes = (p.scenes||[]).map((s,i)=>`<div class="scene"><b>Scene ${i+1}.</b> ${esc(s.beat)}<br><span style="color:var(--muted)">${esc(s.image_prompt)}</span></div>`).join('');
+  window.__pkg = p;
+  const scenes = (p.scenes||[]).map((s,i)=>`<div class="scene"><b>Scene ${i+1}.</b> ${esc(s.beat)}<br><span style="color:var(--muted)">${esc(s.image_prompt)}</span>
+      <div style="margin-top:8px"><button class="ghost" style="padding:6px 12px;font-size:.8rem" onclick="genImage(this,${i})">🎨 Generate image</button></div>
+      <div class="imgwrap"></div></div>`).join('');
   const promptsPlain = (p.scenes||[]).map((s,i)=>`Scene ${i+1}: ${s.image_prompt}`).join('\n');
   const caps = p.captions||{};
   const narration = (p.hook?p.hook+'\n\n':'')+ (p.script||'');
@@ -133,13 +136,32 @@ function render(data){
       </div>${warn}
       <h3>Narration (→ paste into your voice tool)</h3>
       <div class="block">${copyBtn(narration)}${esc(narration)}</div>
-      <h3>Scenes & image prompts (→ your image generator)</h3>
+      <h3>Scenes & image prompts (→ your image generator, or the buttons below)</h3>
       <div class="block" style="white-space:normal">${copyBtn(promptsPlain)}${scenes}</div>
       <h3>Captions</h3>
       <div class="block">${copyBtn(caps.youtube||'')}<b>YouTube:</b> ${esc(caps.youtube||'')}</div>
       <div class="block" style="margin-top:8px">${copyBtn(caps.tiktok||'')}<b>TikTok:</b> ${esc(caps.tiktok||'')}</div>
       <div class="block" style="margin-top:8px">${copyBtn(caps.instagram||'')}<b>Instagram:</b> ${esc(caps.instagram||'')}</div>
     </div>`;
+}
+
+async function genImage(btn, i){
+  const prompt = (window.__pkg && window.__pkg.scenes[i] && window.__pkg.scenes[i].image_prompt) || '';
+  const wrap = btn.parentElement.nextElementSibling;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'generating…';
+  wrap.innerHTML = '';
+  try{
+    const r = await fetch('/api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||'image generation failed');
+    wrap.innerHTML = `<img src="${d.url}" alt="" style="width:100%;max-width:270px;border-radius:8px;margin-top:8px;display:block">
+      <a href="${d.url}" download target="_blank" style="font-size:.8rem">download image</a>`;
+    btn.textContent = '✓ image ready';
+  }catch(e){
+    wrap.innerHTML = `<div class="hint" style="color:#e08">${esc(e.message)}</div>`;
+    btn.textContent = orig; btn.disabled = false;
+  }
 }
 </script>
 </body>
