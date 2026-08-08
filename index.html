@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leyendas Studio — legend → short-video script</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --line:#262b36; --ink:#e8eaf0; --muted:#9aa3b2;
+    --accent:#e0b15a; --accent2:#c8503a; --ok:#4a9d6a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.5}
+  header{padding:28px 20px 12px;text-align:center}
+  header h1{margin:0;font-size:1.5rem;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  header p{margin:6px 0 0;color:var(--muted);font-size:.9rem}
+  .wrap{max-width:820px;margin:0 auto;padding:16px 20px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+  label{display:block;font-size:.8rem;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+  input,textarea,select{width:100%;background:#0c0e13;border:1px solid var(--line);color:var(--ink);
+       border-radius:9px;padding:11px 12px;font-size:.95rem;font-family:inherit}
+  textarea{min-height:74px;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:180px}
+  .btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  button{cursor:pointer;border:0;border-radius:9px;padding:12px 18px;font-size:.95rem;font-weight:600}
+  .primary{background:var(--accent);color:#1a1205}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+  .result h3{margin:18px 0 6px;font-size:.75rem;color:var(--accent);text-transform:uppercase;letter-spacing:1px}
+  .block{background:#0c0e13;border:1px solid var(--line);border-radius:9px;padding:12px;position:relative;white-space:pre-wrap;font-size:.92rem}
+  .copy{position:absolute;top:8px;right:8px;background:#1c212b;border:1px solid var(--line);color:var(--muted);
+        border-radius:6px;padding:4px 9px;font-size:.72rem;cursor:pointer}
+  .copy:hover{color:var(--ink)}
+  .scene{border-left:3px solid var(--accent2);padding:8px 12px;margin:8px 0;background:#0c0e13;border-radius:0 8px 8px 0}
+  .scene b{color:var(--accent)}
+  .badge{display:inline-block;font-size:.72rem;padding:3px 9px;border-radius:20px;background:#1c212b;color:var(--muted);border:1px solid var(--line)}
+  .spinner{display:none;margin:20px auto;width:26px;height:26px;border:3px solid var(--line);
+           border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .warn{background:#3a2a12;border:1px solid #6b4e1f;color:#f0d79a;padding:10px 12px;border-radius:9px;font-size:.85rem;margin-top:10px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Leyendas</span> Studio</h1>
+  <p>Turn a public-domain legend into a ready-to-shoot short-video script</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <label>Pick a starter legend (or write your own below)</label>
+    <select id="picker">
+      <option value="">— choose a legend —</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label>Legend title</label>
+        <input id="title" placeholder="La Garita del Diablo">
+      </div>
+      <div>
+        <label>Region</label>
+        <input id="region" placeholder="San Juan, Puerto Rico">
+      </div>
+    </div>
+
+    <label>Premise — one or two sentences, in your own words</label>
+    <textarea id="premise" placeholder="A Spanish sentry vanishes from his guard post at El Morro; legend blames the Devil, but locals say he escaped with his lover."></textarea>
+    <div class="hint">Use only public-domain sources. The app writes an original retelling — never paste an author's actual sentences.</div>
+
+    <div class="btns">
+      <button class="primary" onclick="generate(false)">Generate script</button>
+      <button class="ghost" onclick="generate(true)">Try demo (no key)</button>
+    </div>
+  </div>
+
+  <div class="spinner" id="spin"></div>
+  <div id="out"></div>
+</div>
+
+<script>
+const LEGENDS = [
+  {title:"La Garita del Diablo", region:"San Juan, Puerto Rico", premise:"A Spanish sentry vanishes from his guard post at El Morro; legend blames the Devil, but locals say he escaped with his lover Diana."},
+  {title:"El pirata Cofresí", region:"Cabo Rojo, Puerto Rico", premise:"A Puerto Rican sailor turned pirate in the 1820s who robbed rich merchant ships and shared the loot with poor villagers, until the navy hunted him down and hanged him in 1825."},
+  {title:"Guanina", region:"Añasco, Puerto Rico", premise:"A tragic love story between a Taíno noblewoman and a Spanish soldier during the conquest, ending in death as their peoples went to war."},
+  {title:"La leyenda del Yunque", region:"El Yunque, Puerto Rico", premise:"The Taíno good spirit Yúcahu is said to dwell atop the rainforest peaks, guarding the island against the evil Juracán of the storms."},
+  {title:"El Salto de Doña Juana", region:"Cordillera Central, Puerto Rico", premise:"A grieving woman is said to have vanished at a mountain waterfall that now carries her name."},
+  {title:"La Cara del Indio", region:"Isabela, Puerto Rico", premise:"A giant face carved into a seaside cliff honors a defiant Taíno chief who resisted the Spanish."}
+];
+
+const picker = document.getElementById('picker');
+LEGENDS.forEach((l,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=l.title; picker.appendChild(o); });
+picker.onchange = () => {
+  const l = LEGENDS[picker.value]; if(!l) return;
+  title.value=l.title; region.value=l.region; premise.value=l.premise;
+};
+
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function copyBtn(text){ const id='c'+Math.random().toString(36).slice(2);
+  window[id]=()=>navigator.clipboard.writeText(text);
+  return `<button class="copy" onclick="window['${id}']();this.textContent='copied ✓';setTimeout(()=>this.textContent='copy',1200)">copy</button>`; }
+
+async function generate(demo){
+  const payload = {title:title.value, region:region.value, premise:premise.value, demo};
+  document.getElementById('spin').style.display='block';
+  document.getElementById('out').innerHTML='';
+  try{
+    const r = await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'generation failed');
+    render(data);
+  }catch(e){
+    document.getElementById('out').innerHTML = `<div class="card"><b style="color:#e08">Error:</b> ${esc(e.message)}<div class="hint">If you just deployed, make sure GROQ_API_KEY is set in Vercel, or use the demo button.</div></div>`;
+  }finally{ document.getElementById('spin').style.display='none'; }
+}
+
+function render(data){
+  const p = data.package;
+  const scenes = (p.scenes||[]).map((s,i)=>`<div class="scene"><b>Scene ${i+1}.</b> ${esc(s.beat)}<br><span style="color:var(--muted)">${esc(s.image_prompt)}</span></div>`).join('');
+  const promptsPlain = (p.scenes||[]).map((s,i)=>`Scene ${i+1}: ${s.image_prompt}`).join('\n');
+  const caps = p.captions||{};
+  const narration = (p.hook?p.hook+'\n\n':'')+ (p.script||'');
+  const warn = p._warning ? `<div class="warn">${esc(p._warning)}</div>`:'';
+  const modeBadge = data.mode==='live' ? '<span class="badge" style="color:var(--ok)">● live</span>' : '<span class="badge">demo</span>';
+  document.getElementById('out').innerHTML = `
+    <div class="card result">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0;font-size:1.15rem">${esc(p.title||'Episode')}</h2>${modeBadge}
+      </div>${warn}
+      <h3>Narration (→ paste into your voice tool)</h3>
+      <div class="block">${copyBtn(narration)}${esc(narration)}</div>
+      <h3>Scenes & image prompts (→ your image generator)</h3>
+      <div class="block" style="white-space:normal">${copyBtn(promptsPlain)}${scenes}</div>
+      <h3>Captions</h3>
+      <div class="block">${copyBtn(caps.youtube||'')}<b>YouTube:</b> ${esc(caps.youtube||'')}</div>
+      <div class="block" style="margin-top:8px">${copyBtn(caps.tiktok||'')}<b>TikTok:</b> ${esc(caps.tiktok||'')}</div>
+      <div class="block" style="margin-top:8px">${copyBtn(caps.instagram||'')}<b>Instagram:</b> ${esc(caps.instagram||'')}</div>
+    </div>`;
+}
+</script>
+</body>
+</html>
