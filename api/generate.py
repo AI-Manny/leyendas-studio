@@ -48,6 +48,14 @@ Aim for 5-7 scenes. Keep every field free of copyrighted text."""
 
 
 def _post(url, headers, payload):
+    # Send a real browser User-Agent so Cloudflare (in front of Groq) doesn't
+    # flag the server-side request as a bot (Cloudflare error 1010).
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        **headers,
+    }
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
