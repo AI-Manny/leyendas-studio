@@ -7,8 +7,14 @@ Set your API key in Vercel: Project Settings -> Environment Variables -> GROQ_AP
 (free key from console.groq.com). OPENAI_API_KEY or ANTHROPIC_API_KEY also work.
 Uses only the Python standard library, so there are no dependencies to install.
 """
-import json, os, re, urllib.request
+import json, os, re, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler
+
+
+def _key(name):
+    """Read an env var and strip stray whitespace/newlines that break auth headers."""
+    v = os.getenv(name)
+    return v.strip() if v else v
 
 SYSTEM = (
     "You are a scriptwriter for a faceless short-video channel that retells "
@@ -43,28 +49,32 @@ Aim for 5-7 scenes. Keep every field free of copyrighted text."""
 
 def _post(url, headers, payload):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:300]
+        raise RuntimeError(f"upstream {e.code}: {body}")
 
 
 def call_llm(system, user):
-    if os.getenv("GROQ_API_KEY"):
+    if _key("GROQ_API_KEY"):
         d = _post("https://api.groq.com/openai/v1/chat/completions",
-                  {"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}", "Content-Type": "application/json"},
+                  {"Authorization": f"Bearer {_key('GROQ_API_KEY')}", "Content-Type": "application/json"},
                   {"model": "llama-3.3-70b-versatile",
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                    "temperature": 0.9, "response_format": {"type": "json_object"}})
         return d["choices"][0]["message"]["content"]
-    if os.getenv("OPENAI_API_KEY"):
+    if _key("OPENAI_API_KEY"):
         d = _post("https://api.openai.com/v1/chat/completions",
-                  {"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}", "Content-Type": "application/json"},
+                  {"Authorization": f"Bearer {_key('OPENAI_API_KEY')}", "Content-Type": "application/json"},
                   {"model": "gpt-4o-mini",
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                    "temperature": 0.9, "response_format": {"type": "json_object"}})
         return d["choices"][0]["message"]["content"]
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if _key("ANTHROPIC_API_KEY"):
         d = _post("https://api.anthropic.com/v1/messages",
-                  {"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                  {"x-api-key": _key("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
                   {"model": "claude-3-5-haiku-latest", "max_tokens": 1500,
                    "messages": [{"role": "user", "content": system + "\n\n" + user}]})
         return d["content"][0]["text"]
