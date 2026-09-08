@@ -204,9 +204,47 @@ async function compileVideo(btn){
       tries++;
     }
     if(!url) throw new Error('render timed out');
+    window.__videoUrl = url;
     out.innerHTML = `<video src="${url}" controls style="width:100%;max-width:300px;border-radius:10px;margin-top:10px;display:block"></video>
-      <a href="${url}" download target="_blank">download MP4</a>`;
+      <a href="${url}" download target="_blank">download MP4</a>
+      <div style="margin-top:14px">
+        <label>Publish to</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin:6px 0">
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.85rem;color:var(--ink)"><input type="checkbox" class="pubch" value="youtube" checked> YouTube</label>
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.85rem;color:var(--ink)"><input type="checkbox" class="pubch" value="tiktok" checked> TikTok</label>
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.85rem;color:var(--ink)"><input type="checkbox" class="pubch" value="instagram" checked> Instagram</label>
+        </div>
+        <button class="primary" style="width:100%" onclick="publishVideo(this)">🚀 Publish</button>
+        <div id="publishOut"></div>
+      </div>`;
     btn.textContent = '✓ video ready';
+  }catch(e){
+    out.innerHTML = `<div class="warn">${esc(e.message)}</div>`;
+    btn.textContent = orig; btn.disabled = false;
+  }
+}
+
+async function publishVideo(btn){
+  const p = window.__pkg;
+  const url = window.__videoUrl;
+  const out = document.getElementById('publishOut');
+  if(!p || !url) return;
+  const platforms = Array.from(document.querySelectorAll('.pubch:checked')).map(c=>c.value);
+  if(!platforms.length){ out.innerHTML = `<div class="hint" style="color:#e08">Select at least one platform.</div>`; return; }
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'publishing…';
+  out.innerHTML = `<div class="hint">Publishing to ${esc(platforms.join(', '))}…</div>`;
+  try{
+    const r = await fetch('/api/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      videoUrl:url, title:p.title, captions:p.captions||{}, platforms
+    })});
+    const d = await r.json();
+    if(!d.ok){
+      const firstErr = d.result && Array.isArray(d.result.errors) && d.result.errors[0];
+      throw new Error((firstErr && (firstErr.message||firstErr.action)) || d.error || 'publish failed');
+    }
+    out.innerHTML = `<div class="hint" style="color:var(--ok)">✓ Published — ${esc(JSON.stringify(d.result.postIds || d.result.id || d.result))}</div>`;
+    btn.textContent = '✓ published';
   }catch(e){
     out.innerHTML = `<div class="warn">${esc(e.message)}</div>`;
     btn.textContent = orig; btn.disabled = false;
