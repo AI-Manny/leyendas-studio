@@ -64,7 +64,7 @@ lives.
 
 | Service | Used by | Env var | Notes |
 |---|---|---|---|
-| Groq | `api/generate.py` | `GROQ_API_KEY` | Tried first; `llama-3.3-70b-versatile`. |
+| Groq | `api/generate.py` | `GROQ_API_KEY` | Tried first; `openai/gpt-oss-120b` (llama-3.3-70b was retired 2026-08-16). A failing provider falls through to the next configured one. |
 | OpenAI | `api/generate.py` | `OPENAI_API_KEY` | Fallback if no Groq key; `gpt-5.6-luna`. |
 | Anthropic | `api/generate.py` | `ANTHROPIC_API_KEY` | Fallback if neither above; `claude-opus-5` with structured JSON output and the server-side refusal fallback. |
 | (provider pick) | `api/generate.py` | `LLM_PROVIDER` | Optional: `groq`, `openai` or `anthropic` forces one provider when several keys are set. |

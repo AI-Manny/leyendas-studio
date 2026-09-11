@@ -48,10 +48,11 @@ Produce JSON with EXACTLY these keys:
 }}
 Aim for 5-7 scenes. Keep every field free of copyrighted text."""
 
-# Model per provider. Groq: llama-3.3-70b-versatile is still a production model
-# (2026-09). OpenAI: gpt-4o-mini was retired from the catalog; gpt-5.6-luna is
-# the current low-cost tier. Anthropic: claude-opus-5 with structured output.
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# Model per provider. Groq retired llama-3.3-70b-versatile for free/developer
+# tiers on 2026-08-16 (the catalog page still lists it; the API returns 404) and
+# names openai/gpt-oss-120b as the replacement. OpenAI: gpt-4o-mini left the
+# catalog; gpt-5.6-luna is the low-cost tier. Anthropic: claude-opus-5.
+GROQ_MODEL = "openai/gpt-oss-120b"
 OPENAI_MODEL = "gpt-5.6-luna"
 ANTHROPIC_MODEL = "claude-opus-5"
 
@@ -149,13 +150,23 @@ PROVIDERS = (("groq", "GROQ_API_KEY", _groq), ("openai", "OPENAI_API_KEY", _open
 
 
 def call_llm(system, user):
+    """Try each configured provider in order; a failure (retired model, quota,
+    outage) falls through to the next one instead of taking the feature down.
+    Returns (text, provider_name), or (None, None) when no key is set."""
     forced = (_key("LLM_PROVIDER") or "").lower()
+    errors = []
     for name, env, fn in PROVIDERS:
         if forced and name != forced:
             continue
-        if _key(env):
-            return fn(system, user)
-    return None  # no key -> caller falls back to demo
+        if not _key(env):
+            continue
+        try:
+            return fn(system, user), name
+        except Exception as e:  # noqa: BLE001 - surface every provider's reason
+            errors.append(f"{name}: {e}")
+    if errors:
+        raise RuntimeError("all configured providers failed -> " + " | ".join(errors))
+    return None, None  # no key -> caller falls back to demo
 
 
 def demo_package(title, premise, region):
@@ -191,13 +202,15 @@ def build(body):
     region = (body.get("region") or "Puerto Rico").strip()
     if body.get("demo"):
         return demo_package(title, premise, region), "demo"
-    raw = call_llm(SYSTEM, USER_TEMPLATE.format(title=title, premise=premise, region=region))
+    raw, provider = call_llm(SYSTEM, USER_TEMPLATE.format(title=title, premise=premise, region=region))
     if raw is None:
         pkg = demo_package(title, premise, region)
         pkg["_warning"] = "No API key set in Vercel yet - showing demo output. Add GROQ_API_KEY to go live."
         return pkg, "demo-nokey"
     raw = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    return json.loads(raw), "live"
+    pkg = json.loads(raw)
+    pkg["_provider"] = provider  # which service wrote this one (shown nowhere yet; handy in DevTools)
+    return pkg, "live"
 
 
 class handler(BaseHTTPRequestHandler):
