@@ -10,6 +10,14 @@ export default function middleware(request) {
   const expectedUser = process.env.SITE_USER;
   const expectedPass = process.env.SITE_PASS;
 
+  // Diagnostic: proves the middleware runs and shows whether the env vars are
+  // visible to it, without revealing their values.
+  if (new URL(request.url).pathname === '/__gate') {
+    return new Response(JSON.stringify({ middleware: true, hasUser: !!expectedUser, hasPass: !!expectedPass }), {
+      status: 401, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   if (!expectedUser || !expectedPass) {
     return; // no credentials configured -> allow through
   }
