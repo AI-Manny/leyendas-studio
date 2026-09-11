@@ -1,6 +1,6 @@
 # Architecture Map — Leyendas Studio
 
-Last updated: 2026-08-08
+Last updated: 2026-09-11
 
 ## Overview
 
@@ -65,8 +65,9 @@ lives.
 | Service | Used by | Env var | Notes |
 |---|---|---|---|
 | Groq | `api/generate.py` | `GROQ_API_KEY` | Tried first; `llama-3.3-70b-versatile`. |
-| OpenAI | `api/generate.py` | `OPENAI_API_KEY` | Fallback if no Groq key; `gpt-4o-mini`. |
-| Anthropic | `api/generate.py` | `ANTHROPIC_API_KEY` | Fallback if neither above; `claude-3-5-haiku-latest`. |
+| OpenAI | `api/generate.py` | `OPENAI_API_KEY` | Fallback if no Groq key; `gpt-5.6-luna`. |
+| Anthropic | `api/generate.py` | `ANTHROPIC_API_KEY` | Fallback if neither above; `claude-opus-5` with structured JSON output and the server-side refusal fallback. |
+| (provider pick) | `api/generate.py` | `LLM_PROVIDER` | Optional: `groq`, `openai` or `anthropic` forces one provider when several keys are set. |
 | fal.ai | `api/image.py` | `FAL_KEY` | `flux/schnell` model, portrait images. |
 | JSON2Video | `api/compile.py` | `JSON2VIDEO_KEY` | Renders scenes + TTS narration + subtitles into an MP4. |
 | Ayrshare | `api/publish.py` | `AYRSHARE_KEY` | Cross-posts to YouTube/TikTok/Instagram; accounts must be linked in the Ayrshare dashboard first. |

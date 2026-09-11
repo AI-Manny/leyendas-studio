@@ -5,6 +5,8 @@ Returns the episode package as JSON.
 
 Set your API key in Vercel: Project Settings -> Environment Variables -> GROQ_API_KEY
 (free key from console.groq.com). OPENAI_API_KEY or ANTHROPIC_API_KEY also work.
+Provider order is Groq -> OpenAI -> Anthropic (first key found); set LLM_PROVIDER
+to "groq", "openai" or "anthropic" to force one when several keys are present.
 Uses only the Python standard library, so there are no dependencies to install.
 """
 import json, os, re, urllib.request, urllib.error
@@ -46,6 +48,45 @@ Produce JSON with EXACTLY these keys:
 }}
 Aim for 5-7 scenes. Keep every field free of copyrighted text."""
 
+# Model per provider. Groq: llama-3.3-70b-versatile is still a production model
+# (2026-09). OpenAI: gpt-4o-mini was retired from the catalog; gpt-5.6-luna is
+# the current low-cost tier. Anthropic: claude-opus-5 with structured output.
+GROQ_MODEL = "llama-3.3-70b-versatile"
+OPENAI_MODEL = "gpt-5.6-luna"
+ANTHROPIC_MODEL = "claude-opus-5"
+
+# JSON Schema handed to Anthropic's output_config.format so the reply is
+# guaranteed to be schema-valid JSON (no fence stripping, no retries).
+EPISODE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "hook": {"type": "string"},
+        "script": {"type": "string"},
+        "scenes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"beat": {"type": "string"}, "image_prompt": {"type": "string"}},
+                "required": ["beat", "image_prompt"],
+                "additionalProperties": False,
+            },
+        },
+        "captions": {
+            "type": "object",
+            "properties": {
+                "youtube": {"type": "string"},
+                "tiktok": {"type": "string"},
+                "instagram": {"type": "string"},
+            },
+            "required": ["youtube", "tiktok", "instagram"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["title", "hook", "script", "scenes", "captions"],
+    "additionalProperties": False,
+}
+
 
 def _post(url, headers, payload):
     # Send a real browser User-Agent so Cloudflare (in front of Groq) doesn't
@@ -65,27 +106,55 @@ def _post(url, headers, payload):
         raise RuntimeError(f"upstream {e.code}: {body}")
 
 
+def _groq(system, user):
+    d = _post("https://api.groq.com/openai/v1/chat/completions",
+              {"Authorization": f"Bearer {_key('GROQ_API_KEY')}", "Content-Type": "application/json"},
+              {"model": GROQ_MODEL,
+               "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+               "temperature": 0.9, "response_format": {"type": "json_object"}})
+    return d["choices"][0]["message"]["content"]
+
+
+def _openai(system, user):
+    # No temperature: the GPT-5 family only accepts the default sampling.
+    d = _post("https://api.openai.com/v1/chat/completions",
+              {"Authorization": f"Bearer {_key('OPENAI_API_KEY')}", "Content-Type": "application/json"},
+              {"model": OPENAI_MODEL,
+               "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+               "response_format": {"type": "json_object"}})
+    return d["choices"][0]["message"]["content"]
+
+
+def _anthropic(system, user):
+    # Opus 5 thinks adaptively by default; structured output pins the JSON shape.
+    # The server-side fallback beta re-runs a policy-declined request on another
+    # model inside the same call instead of returning an empty refusal.
+    d = _post("https://api.anthropic.com/v1/messages",
+              {"x-api-key": _key("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01",
+               "anthropic-beta": "server-side-fallback-2026-07-01", "Content-Type": "application/json"},
+              {"model": ANTHROPIC_MODEL, "max_tokens": 4096,
+               "system": system,
+               "messages": [{"role": "user", "content": user}],
+               "output_config": {"format": {"type": "json_schema", "schema": EPISODE_SCHEMA}},
+               "fallbacks": "default"})
+    if d.get("stop_reason") == "refusal":
+        raise RuntimeError("the model declined this premise; rephrase it and try again")
+    for block in d.get("content", []):  # skip thinking blocks, take the text
+        if block.get("type") == "text":
+            return block["text"]
+    raise RuntimeError("empty response from Anthropic")
+
+
+PROVIDERS = (("groq", "GROQ_API_KEY", _groq), ("openai", "OPENAI_API_KEY", _openai), ("anthropic", "ANTHROPIC_API_KEY", _anthropic))
+
+
 def call_llm(system, user):
-    if _key("GROQ_API_KEY"):
-        d = _post("https://api.groq.com/openai/v1/chat/completions",
-                  {"Authorization": f"Bearer {_key('GROQ_API_KEY')}", "Content-Type": "application/json"},
-                  {"model": "llama-3.3-70b-versatile",
-                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                   "temperature": 0.9, "response_format": {"type": "json_object"}})
-        return d["choices"][0]["message"]["content"]
-    if _key("OPENAI_API_KEY"):
-        d = _post("https://api.openai.com/v1/chat/completions",
-                  {"Authorization": f"Bearer {_key('OPENAI_API_KEY')}", "Content-Type": "application/json"},
-                  {"model": "gpt-4o-mini",
-                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                   "temperature": 0.9, "response_format": {"type": "json_object"}})
-        return d["choices"][0]["message"]["content"]
-    if _key("ANTHROPIC_API_KEY"):
-        d = _post("https://api.anthropic.com/v1/messages",
-                  {"x-api-key": _key("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
-                  {"model": "claude-3-5-haiku-latest", "max_tokens": 1500,
-                   "messages": [{"role": "user", "content": system + "\n\n" + user}]})
-        return d["content"][0]["text"]
+    forced = (_key("LLM_PROVIDER") or "").lower()
+    for name, env, fn in PROVIDERS:
+        if forced and name != forced:
+            continue
+        if _key(env):
+            return fn(system, user)
     return None  # no key -> caller falls back to demo
 
 
